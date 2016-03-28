@@ -13,3 +13,10 @@ Everything is loaded with respect to current interpreter session -- pythonpath, 
 
 Thus, the first idea does not apply to Python...
 
+
+# Interpreter session based packaging
+
+Итак с созданием окружения для пакетов неудача.
+Питон грузит всё динамически, всё в сессии интерпретатора.
+Нужно создавать окружение не для пакета, а для интерпретатора
+
