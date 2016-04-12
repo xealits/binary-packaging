@@ -13,6 +13,7 @@ function store_packages
 		echo "installing:" $packages
 		echo "      from:" $source_path
 		echo "        to:" $store_path
+		echo "..........:"
 		for p in $packages
 			set package_source $source_path/$p
 			if [ ! -e $package_source ]
@@ -23,9 +24,13 @@ function store_packages
 				set package_hash (find $package_source -type f -exec md5sum "{}" \; | cut -f1 -d" " | sort | md5sum | cut -f1 -d" ")
 				set stored_name "$p"_"$package_hash"
 				echo "        as:" $stored_name
-				echo "Running:"
-				echo "cp -R $package_source $store_path/$stored_name"
-				cp -R $package_source $store_path/$stored_name
+				if [ -e $store_path/$stored_name ]
+					echo "Skipping, the package is found in the store."
+				else
+					echo "Running:"
+					echo "cp -R $package_source $store_path/$stored_name"
+					cp -R $package_source $store_path/$stored_name
+				end
 			end
 		end
 	end
