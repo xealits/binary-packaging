@@ -22,7 +22,7 @@ function store_packages
 				return 1
 			else
 				set package_hash (find $package_source -type f -exec md5sum "{}" \; | cut -f1 -d" " | sort | md5sum | cut -f1 -d" ")
-				set stored_name "$p"_"$package_hash"
+				set stored_name "$p","$package_hash"
 				echo "        as:" $stored_name
 				if [ -e $store_path/$stored_name ]
 					echo "Skipping, the package is found in the store."

@@ -1,3 +1,5 @@
+# FIXME: the different package versions are not considered,
+# version collisions are not considered as well
 
 function linkup_env
 	# the last variable is the env -- where the env links are
@@ -27,7 +29,11 @@ function linkup_env
 	echo >&2 "..........:"
 
 	for p in $packages
-		if [ ! -e $store_path/$p* ]
+		echo checking input package:
+		# set stored_names $store_path/$p,*
+		ls -d $store_path/$p,*
+
+		if [ (count (ls -d $store_path/$p,*)) = 0 ]
 			echo >&2 "Requested package not found:" $p
 			return 1
 		end
@@ -40,11 +46,13 @@ function linkup_env
 	set env_packages (get_package_env $store_path $packages)
 	echo >&2 "Final env:" $env_packages
 	mkdir $env_dir
-	for p in $env_packages
-	  echo $p
-	  set stored_package (ls -d $store_path/$p*)[1]
+	for package_name in $env_packages
+	  echo $package_name
+	  # getting the first package of the ones matching by the name:
+	  set stored_package (ls -d $store_path/$package_name,*)[1]
 	  echo >&2 "linking" $stored_package
-	  ln -s (realpath $stored_package[1]) $env_dir/$p
+	  # linking the package name into the env_dir
+	  ln -s (realpath $stored_package[1]) $env_dir/$package_name
 	end
 end
 
@@ -68,20 +76,20 @@ function get_package_env
   set dependencies
 
   for p in $packages
-    set stored_ps (ls -d $store_path/$p*)
+    set stored_ps (ls -d $store_path/$p,*)
     echo >&2 "Found " (count stored_ps) " stored packages corrsponding to" $p "(chose the first one)"
     # FIXME: here we rely on the first output of ls -- it will break
     set stored_ps $stored_ps[1]
     echo >&2 $stored_ps
     if [ -e "$stored_ps/deps.list" ]
       for d in (cat "$stored_ps/deps.list")
+        # FIXME: in fact here we need to check the versions/hashes of dependancy and the packages list
         if contains $d $packages; continue; end
-        if [ -e $store_path/$d* ]
-          set dependencies $dependencies $d
-        else
+        if [ (count (ls $store_path/$p,*)) = 0 ]
           echo >&2 "Dependancy package $d is not stored in $store_path"
           return 1
         end
+        set dependencies $dependencies $d
       end
     end
   end
