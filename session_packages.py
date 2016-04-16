@@ -1,6 +1,18 @@
-"""
+'''
 The module with a bunch of functions implementing packaging for Python.
-"""
+
+ready_package -- a directory
+    the name of the directory = name of the package
+    the first line of the file `version` in the dircetory = version
+    the lines of the file deps.list in the directory = (package_spec) names of dependancies
+
+package_spec -- a tuple of <name>, <version>, <checksum>
+    or the corresponding string "<name>,<version>,<checksum>"
+
+package_selector -- a function,
+    takes the package_spec parameters,
+    returns True or False if the package passes requirements
+'''
 
 import os
 from os.path import isdir, isfile, normpath, basename
@@ -86,19 +98,6 @@ def package_threedotversion_selectors(primary, secondary, last):
     return the_checksum_selector
 '''
 
-'''
-ready_package -- a directory
-    the name of the directory = name of the package
-    the first line of the file `version` in the dircetory = version
-    the lines of the file deps.list in the directory = (package_spec) names of dependancies
-
-package_spec -- a tuple of <name>, <version>, <checksum>
-    or the corresponding string "<name>,<version>,<checksum>"
-
-package_selector -- a function,
-    takes the package_spec parameters,
-    returns True or False if the package passes requirements
-'''
 
 
 def package_spec(pckg_path):
@@ -168,6 +167,18 @@ def store_packages(packages_requested, sources, storage_directory):
         for package_path, spec in variants:
             # cp -R package_path storage_directory/"{},{},{}".format(*spec)
             copytree(package_path, storage_directory + "/{},{},{}".format(*spec))
+            # FIXME: copytree copies hidden dirs/files and does not have an option to omit them
+            #        have to use os.walk instead
+            # like this:
+            # for d, dirs, files in os.walk('.'):
+                # files = [d+'/'+f for f in files if not f[0] == '.']
+                # dirs[:] = [d for d in dirs if not d[0] == '.']
+                # print(files)
+            # but there are also dirs like __pycache__ -- what to do with them?
+            # and really if a symlink to stored package dir is used,
+            # then the cached files will be created in the stored dir
+            # and thus change its' state -- what to do with that?
+            # one needs to clarify 'ready package' definition
 
     
 
