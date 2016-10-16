@@ -1,0 +1,62 @@
+#!/usr/bin/fish
+# script (python? fish?)
+# getting all elf binary dependencies (or loose ends)
+
+# format:
+#  0x000000000000001d (RUNPATH)            Library runpath: [$ORIGIN/:$ORIGIN/hello_dependencies/]
+#  0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+#  0x000000000000000e (SONAME)             Library soname: [ld-linux-x86-64.so.2]
+
+
+# depends on:
+# - readelf
+# - which
+# - grep
+
+#echo (status -f)
+#echo $argv
+
+set MAX_DEPTH 10
+
+function traverse_deps
+
+set thebin (which $argv[1]) # supposed to be the path to the actual file, maybe symlink will work too...
+
+set soname (readelf -d $thebin | grep SONAME | cut -d "[" -f2 | cut -d "]" -f1)
+set needed (readelf -d $thebin | grep NEEDED | cut -d "[" -f2 | cut -d "]" -f1)
+set runpath (readelf -d $thebin | grep RUNPATH | cut -d "[" -f2 | cut -d "]" -f1)
+
+echo soname $soname
+echo needed $needed
+echo runpath $runpath
+end
+
+
+traverse_deps $MAX_DEPTH $argv[1]
+
+
+# from man ld.so
+# for /lib/ld-linux.so.2 -> i386-linux-gnu/ld-2.19.so
+# which is 134380 bytes
+# of sha1 sum = 9156dbfe86ea134f0802949b330058fd6c20a096
+#
+#       When resolving library dependencies, the dynamic linker first inspects each dependency string to see if it contains a slash (this can occur if a library path‐
+#       name containing slashes was specified at link time).  If a slash is found, then the dependency string is interpreted as a (relative or absolute) pathname, and
+#       the library is loaded using that pathname.
+#
+#       If a library dependency does not contain a slash, then it is searched for in the following order:
+#
+#       o  (ELF only) Using the directories specified in the DT_RPATH dynamic section attribute of the binary if present and DT_RUNPATH attribute does not exist.  Use
+#          of DT_RPATH is deprecated.
+#
+#       o  Using the environment variable LD_LIBRARY_PATH.  Except if the executable is a set-user-ID/set-group-ID binary, in which case it is ignored.
+#
+#       o  (ELF only) Using the directories specified in the DT_RUNPATH dynamic section attribute of the binary if present.
+#
+#       o  From  the  cache file /etc/ld.so.cache, which contains a compiled list of candidate libraries previously found in the augmented library path.  If, however,
+#          the binary was linked with the -z nodeflib linker option, libraries in the default library paths are skipped.  Libraries installed in  hardware  capability
+#          directories (see below) are preferred to other libraries.
+#
+#       o  In the default path /lib, and then /usr/lib.  If the binary was linked with the -z nodeflib linker option, this step is skipped.
+
+
