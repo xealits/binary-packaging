@@ -1,5 +1,5 @@
 #!/usr/bin/fish
-# script (python? fish?)
+# fish script
 # getting all elf binary dependencies (or loose ends)
 
 # format:
@@ -11,28 +11,154 @@
 # depends on:
 # - readelf
 # - which
+# - realpath
+# - basename
+# - dirname
 # - grep
+# - sed
+# - cut
+# - tr
+# - printf
+# - echo
+# - uname
 
 #echo (status -f)
 #echo $argv
 
 set MAX_DEPTH 10
 
-function traverse_deps
+function find_so
+	# in $LD_LIBRARY_PATH
+	# not in /etc/ld.so.cache TODO
+	# and in /lib, /usr/lib
+	# TODO the last step should be skipped if:
+	#	If the binary was linked with the -z nodeflib linker option, this step is skipped.
+	set so $argv[1]
+	set paths $argv[2..-1]
 
-set thebin (which $argv[1]) # supposed to be the path to the actual file, maybe symlink will work too...
+	#echo $so
+	#echo $paths
 
-set soname (readelf -d $thebin | grep SONAME | cut -d "[" -f2 | cut -d "]" -f1)
-set needed (readelf -d $thebin | grep NEEDED | cut -d "[" -f2 | cut -d "]" -f1)
-set runpath (readelf -d $thebin | grep RUNPATH | cut -d "[" -f2 | cut -d "]" -f1)
-
-echo soname $soname
-echo needed $needed
-echo runpath $runpath
+	for d in $paths
+		#echo $d
+		if [ -e $d/$so ]
+			printf "$d/$so"
+			break
+		end
+	end
 end
 
+function traverse_deps
+	#echo 1
 
-traverse_deps $MAX_DEPTH $argv[1]
+	set depth $argv[1]
+	#echo $depth
+
+	#echo $argv
+
+	if [ $depth -ge $MAX_DEPTH ]
+		echo "MAXIMUM DEPTH REACHED"
+		return ""
+	end # TODO: how to return from a fish function?
+
+	set name (basename $argv[2])
+	set thebin (realpath $argv[2]) # supposed to be the path to the actual file, maybe symlink will work too...
+	set dirname (dirname $thebin)
+
+	#echo $name $thebin
+
+	set elf_header (readelf -d $thebin)
+	if [ ! "$elf_header" ]
+		return 1
+	end
+
+	#echo $elf_header
+	#echo $elf_header | grep SONAME | cut -d "[" -f2 | cut -d "]" -f1
+
+	set soname (readelf -d $thebin | grep SONAME | cut -d "[" -f2 | cut -d "]" -f1)
+	set needed (readelf -d $thebin | grep NEEDED | cut -d "[" -f2 | cut -d "]" -f1)
+	set runpath (readelf -d $thebin | grep RUNPATH | cut -d "[" -f2 | cut -d "]" -f1 | sed "s~\$ORIGIN~$dirname~g" | tr ":" "\n")
+
+	#echo $runpath
+
+	#printf  $thebin $soname
+	#printf " %.0s" (seq $depth)
+	for i in (seq $depth)
+		if [ (math "$i % 2") -eq 0 ]
+			printf "|"
+		else
+			printf " "
+		end
+	end
+	printf "%s %s %s\n" $name $soname $thebin
+	#echo needed $needed
+	#echo runpath $runpath
+
+	set depth (math "$depth + 1")
+
+	for dep in $needed
+		#printf " %.0s" (seq $depth)
+		for i in (seq $depth)
+			if [ (math "$i % 2") -eq 0 ]
+				printf "|"
+			else
+				printf " "
+			end
+		end
+		printf "%s" $dep
+		if [ (echo $dep | grep "/") ]
+			echo name
+			if [ -e $dirname/$dep ]
+				printf " (name)-> %s" $dirname/$dep
+			else
+				printf " NO FILE $s" $dirname/$dep
+			end
+			traverse_deps "$depth" "$dirname/$dep"
+			continue
+		end
+
+		#if [ $LD_LIBRARY_PATH ]
+		set dep_path (find_so $dep "$LD_LIBRARY_PATH")
+		#echo A
+		#echo $dep_path
+		#end
+		if [ $dep_path ]
+			printf " (LD_LIBRARY_PATH)-> %s\n" $dep_path
+			traverse_deps "$depth" "$dep_path"
+			continue
+		end
+
+		if [ "$runpath" ]
+			#echo "[RUNPATH]"
+			set dep_path (find_so $dep $runpath)
+			if [ $dep_path ]
+				printf " (binary RUNPATH)-> %s\n" $dep_path
+				traverse_deps "$depth" "$dep_path"
+				continue
+			end
+		end
+
+		# seems like there are more default locations
+		set dep_path (find_so $dep "/lib/" "/usr/lib/" "/lib/"(uname -m)"-linux-gnu/" "/usr/lib/"(uname -m)"-linux-gnu/")
+		if [ $dep_path ]
+			printf " (defaults /lib[/platform], /usr/lib[/platform])-> %s\n" $dep_path
+			traverse_deps "$depth" "$dep_path"
+			continue
+		end
+
+		printf " NOT FOUND\n"
+	end
+end
+
+#echo and start
+
+if [ -e $argv[1] ]
+	echo got file $argv[1]
+	traverse_deps 1 $argv[1]
+else
+	echo assuming bin name "(which is "(which $argv[1])")"
+	traverse_deps 1 (which $argv[1])
+end
 
 
 # from man ld.so
