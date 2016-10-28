@@ -34,7 +34,8 @@ def traverse_deps(depth, filename):
     if depth == MAX_DEPTH:
         print("MAXIMUM DEPTH OF  %s  HAS BEEN REACHED" % MAX_DEPTH)
 
-    name, directory, thebin = basename(filename), dirname(filename), realpath(filename)
+    thebin = realpath(filename)
+    name, directory = basename(thebin), dirname(thebin)
 
     if thebin in parsed_files:
         #print(s(depth) + name, thebin, "SEEN ABOVE")
@@ -57,7 +58,7 @@ def traverse_deps(depth, filename):
         elif "SONAME" in line:
             soname = line.split('[')[1].split(']')[0]
         elif "RUNPATH" in line:
-            runpath = line.split('[')[1].split(']')[0].replace("$ORIGIN", directory).split(':')
+            runpath = line.split('[')[1].split(']')[0].replace('$ORIGIN', directory).split(':')
 
     print(s(depth) + name, thebin, "[%s]" %soname)
     print(s(depth) + "needed:", needed)
