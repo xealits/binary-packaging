@@ -1,18 +1,26 @@
 #!/usr/bin/python3
 
+import argparse
+
 import sys
 from os import environ
 from os.path import isfile, realpath, basename, dirname
 from subprocess import check_output, CalledProcessError
 
 
+parser = argparse.ArgumentParser()
+parser.add_argument("target_name", help="the name of the binary to parse for dependencies, filename or a name found in $PATH")
+parser.add_argument("-b", "--binaries",  help="output the full filenames of all dependencies",
+                    action="store_true")
+
 MAX_DEPTH = 10
+only_binaries=False
 
 platform = check_output("uname -m", shell=True).decode().strip()
 # has got to be a better way
-print(platform)
+#print(platform)
 stdlibs = ['/lib/', '/usr/lib/', "/lib/"+ platform +"-linux-gnu/", "/usr/lib/"+ platform +"-linux-gnu/"]
-print(stdlibs)
+#print(stdlibs)
 
 libenv = environ["LD_LIBRARY_PATH"].split(':')[1:]
 # example:
@@ -60,9 +68,12 @@ def traverse_deps(depth, filename):
         elif "RUNPATH" in line:
             runpath = line.split('[')[1].split(']')[0].replace('$ORIGIN', directory).split(':')
 
-    print(s(depth) + name, thebin, "[%s]" %soname)
-    print(s(depth) + "needed:", needed)
-    print(s(depth) + "runpath:", runpath)
+    if only_binaries:
+        print(thebin)
+    else:
+        print(s(depth) + name, thebin, "[%s]" %soname)
+        print(s(depth) + "needed:", needed)
+        print(s(depth) + "runpath:", runpath)
 
     parsed_files[thebin] = {'soname': soname, 'needed': needed, 'runpath': runpath}
 
@@ -102,18 +113,28 @@ def traverse_deps(depth, filename):
     return 0
 
 #print(sys.argv)
-target_name = sys.argv[1]
+#target_name = sys.argv[1]
 
-if isfile(target_name):
-    print("got file", target_name)
-    traverse_deps(0, target_name)
-else:
-    try:
-        print("which %s" % target_name)
-        filename = check_output("which %s" % target_name, shell=True).strip().decode()
-        print("got a command, found it at %s" % filename)
-    except CalledProcessError:
-        print("couldn't parse the argument")
-        print("usage: ./all_deps.py <cmd|filename>")
-    traverse_deps(0, filename)
+if __name__ == "__main__":
+
+    parser.parse_args()
+    args = parser.parse_args()
+    #print(args.target_name)
+    #print(args.binaries)
+    if args.binaries:
+        only_binaries = True
+    #print(type(args.target_name))
+
+    if isfile(args.target_name):
+        #print("got file", args.target_name)
+        traverse_deps(0, args.target_name)
+    else:
+        try:
+            #print("which %s" % args.target_name)
+            filename = check_output("which %s" % args.target_name, shell=True).strip().decode()
+            #print("got a command, found it at %s" % filename)
+            traverse_deps(0, filename)
+        except CalledProcessError:
+            print("couldn't parse the argument")
+            print("usage: ./all_deps.py <cmd|filename>")
 
