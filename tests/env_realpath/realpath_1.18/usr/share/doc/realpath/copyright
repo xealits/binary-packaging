@@ -1,0 +1,16 @@
+This is realpath, previously part of the dwww package, which is now maintained
+by Robert Luberda <robert@debian.org>
+Original author and first dwww maintainer is Lars Wirzenius <liw@iki.fi>.
+Former maintainer was Jim Pick <jim@jimpick.com>.
+
+Copyright: (C) 1996 Lars Wirzenius <liw@iki.fi>
+           (C) 1996-1998 Jim Pick <jim@jimpick.com>
+           (C) 2001-2009 Robert Luberda <robert@debian.org>
+
+realpath is free software.  You may copy it according to the
+GNU General Public License, version 2. A copy of the license
+is not included, but you can get one from most FTP sites that
+have GNU software, for example, ftp.gnu.org.
+
+On a Debian GNU/Linux system, the GPL can be found as
+/usr/share/common-licenses/GPL-2 .
