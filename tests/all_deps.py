@@ -1,5 +1,27 @@
 #!/usr/bin/python3
 
+"""
+The module defines traverse_deps and supproting functions
+for traversing ELF file dependancy tree.
+
+Used:
+`readelf -d` utility for reading the dynamic section of ELF files,
+`uname -m` for getting the <platform> of the machine.
+
+Dependencies are searched according to ld.so man page:
+
+    1. by the dependency's name in NEEDED field,
+       if it contains a slash `/`
+
+    2. if not, it searches through:
+       1) paths in `LD_LIBRARY_PATH` environment variable,
+       2) `RUNPATH` of the ELF's dynamic section
+       3) in standard paths:
+           /lib/, /usr/lib/, /lib/<platform>-linux-gnu/, /usr/lib/<platform>-linux-gnu/
+          --- where <platform> is found from `uname -m`.
+
+"""
+
 import argparse
 import textwrap
 
@@ -35,6 +57,14 @@ def s(depth):
     return ''.join(' ' if i % 2 == 0 else '|' for i in range(depth))
 
 def traverse_deps(depth, filename, only_binaries=False):
+    """traverse_deps(depth, filename, only_binaries=False)
+
+    Traverse the dependency tree of <filename>.
+    Output the tree in ASCII-art.
+    Or print filenames of all dependencies per line,
+    if only_binaries == True.
+    """
+
     if depth == MAX_DEPTH:
         print("MAXIMUM DEPTH OF  %s  HAS BEEN REACHED" % MAX_DEPTH)
 
