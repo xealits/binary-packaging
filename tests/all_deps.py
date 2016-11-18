@@ -165,7 +165,6 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--binaries",  help="output only the full filenames of all dependencies",
                         action="store_true")
 
-    parser.parse_args()
     args = parser.parse_args()
     #print(args.target_name)
     #print(args.binaries)
