@@ -1,0 +1,29 @@
+debs/shembs packages -> file store -> assembled store -> bin/ lib/ man/ etc PATH dir-s
+
+For bin/ lib/ etc:
+	find files in assembled store
+
+For assembled store:
+	find files in assembled store
+	& files in store
+	+ parse or gen their dependencies
+
+	if not in A store
+	- find it in F
+	- get parse|gen dep-s
+	- find deps in A
+	  or if not in A repeat recursevly
+
+For F store:
+	parse/disasseble deb/rpm/pacman packages
+
+	+ check for arch?
+	+ download deb/rpm?
+
+
+Ещё нужна поддержка "неточных зависимостей".
+Т.е. когда зависимость указывается симлинком не на хешированную директорию,
+а на более свободное определение, с именем и интервалом версий.
+
+
+
