@@ -9,7 +9,7 @@ set soname (readelf -d $elf | grep SONAME | cut -d "[" -f2 | cut -d "]" -f1)
 set the_hash ( shasum $elf | cut -f1 -d" " )
 
 
-if [ $needed ]
+if [ $needed[1] ]
 	# RUNPATH has to be set
 	# plus, the dependency file should be generated
 
