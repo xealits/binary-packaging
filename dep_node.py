@@ -3,6 +3,7 @@ whatever is needed to handle dependency graphs
 '''
 
 from collections import namedtuple
+import logging
 
 
 class GraphNode:
@@ -40,12 +41,16 @@ class GraphNode:
             return f'{self.name}'
 
     def list_graph(self, prefix_list=[]):
+        logging.debug(f'list_graph: {self} [{" ".join(str(n) for n in prefix_list)}]')
         # case of a cycle in the graph
         if self in prefix_list:
+            logging.debug(f'list_graph: in list {self in prefix_list} {self == prefix_list[0]} {hash(self) == hash(prefix_list[0])}')
+            logging.debug(f'list_graph: in list {self == prefix_list[0]} {self.full_definition} {prefix_list[0].full_definition}')
             #yield prefix_self
             yield prefix_list + [self]
 
         else:
+            logging.debug(f'list_graph: NOT in list')
             prefix_self = prefix_list + [self]
             yield prefix_self
 
@@ -72,7 +77,9 @@ class DepNode(GraphNode):
 
     def __init__(self, filename, soname, full_definition, full_path='', rpath='', needed=set()):
         assert filename == full_definition.filename
+        assert isinstance(full_definition, DepDefinition)
         self.full_definition = full_definition
+        self.name = full_definition.filename
 
         value = {'full_definition': full_definition,
                'soname': soname,
@@ -82,12 +89,24 @@ class DepNode(GraphNode):
         super().__init__(filename, value, children=needed)
 
         for dep in needed:
-            dep.parents.add(self) # TODO: check, it has to add the node and resolve conflicts
+            dep.parents.add(self)
+            # TODO: check, it has to add the node and resolve conflicts
+            #       can the nodes overwrite each other in the set?
+            #       how the set distinguishes them?
 
     def __hash__(self):
         return hash((self.name, self.value['full_definition']))
+        #return super().__hash__()
 
-    def fname_conflict(self, other_dep):
+    def __eq__(self, other):
+        if not isinstance(other, DepNode):
+            return False
+
+        return self.eq_fname(other) and \
+               self.eq_version(other) and \
+               self.eq_hash(other)
+
+    def eq_fname(self, other_dep):
         '''
         same file name - same file in the dependency directory.
         Either re-use the same file for both dependencies,
@@ -95,13 +114,13 @@ class DepNode(GraphNode):
         '''
         return self.full_definition.filename == other_dep.full_definition.filename
 
-    def version_conflict(self, other_dep):
+    def eq_version(self, other_dep):
         '''
         '''
         return self.full_definition.version != other_dep.full_definition.version
         # TODO: support version ranges, use some module for semantic versions
 
-    def hash_conflict(self, other_dep):
+    def eq_hash(self, other_dep):
         '''
         '''
         self_hashes  = self.full_definition.hash
@@ -116,18 +135,9 @@ class DepNode(GraphNode):
         return len(self_hashes and other_hashes) == 0
 
     def no_conflict(self, other_dep):
-        if not fname_conflict(other_dep):
-            return True
-
-        # file names are the same - check whether they collide
-        if not version_conflict(other_dep):
-            return True
-
-        # TODO oneline this logic?
-        if not hash_conflict(other_dep):
-            return True
-
-        return False
+        return not self.eq_fname(other_dep) and \
+               not self.eq_version(other_dep) and \
+               not self.eq_hash(other_dep)
 
 """
 I might want to search through the graph

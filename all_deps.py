@@ -25,6 +25,7 @@ Dependencies are searched according to ld.so man page:
 import argparse
 import textwrap
 
+import logging
 import sys
 from os import environ
 from os.path import isfile, realpath, basename, dirname
@@ -57,20 +58,14 @@ def find_so(so, paths):
 
     return None
 
-def s(depth):
-    return ''.join(' ' if i % 2 == 0 else '|' for i in range(depth))
-
-def traverse_deps(depth, filename, only_binaries=False):
-    """traverse_deps(depth, filename, only_binaries=False)
+def traverse_deps(filename, accumulated_dependencies={}):
+    """traverse_deps(filename)
 
     Traverse the dependency tree of <filename>.
-    Output the tree in ASCII-art.
-    Or print filenames of all dependencies per line,
-    if only_binaries == True.
+    And return the dependency graph as DepNode.
     """
 
-    if depth == MAX_DEPTH:
-        print("MAXIMUM DEPTH OF  %s  HAS BEEN REACHED" % MAX_DEPTH)
+    logging.debug(f'traverse_deps: {filename} {len(accumulated_dependencies)}')
 
     thebin = realpath(filename)
     name, directory = basename(thebin), dirname(thebin)
@@ -86,7 +81,7 @@ def traverse_deps(depth, filename, only_binaries=False):
         elf_header = [l.decode() for l in check_output("readelf -d %s" % thebin, shell=True).split(b'\n')]
 
     except CalledProcessError as e:
-        #print(s(depth) + "FAILED TO READ ELF " + thebin)
+        #print("FAILED TO READ ELF " + thebin)
         raise Exception(f'failed to readelf -d {thebin}') from e
     #print(elf_header)
 
@@ -106,13 +101,6 @@ def traverse_deps(depth, filename, only_binaries=False):
     hashes = frozenset()
     full_definition = DepDefinition(name, soname, hashes)
 
-    #if only_binaries:
-    #    print(thebin)
-    #else:
-    #    print(s(depth) + name, thebin, "[%s]" %soname)
-    #    print(s(depth) + "needed:", needed)
-    #    print(s(depth) + "runpath:", runpath)
-
     parsed_files[thebin] = {'soname': soname, 'needed': needed, 'runpath': runpath}
 
     dependencies = set()
@@ -123,33 +111,48 @@ def traverse_deps(depth, filename, only_binaries=False):
         # or defaults "/lib/" "/usr/lib/" "/lib/"(uname -m)"-linux-gnu/" "/usr/lib/"(uname -m)"-linux-gnu/"
         if '/' in dep:
             if isfile(directory + dep):
-                dependencies.add(traverse_deps(depth+1, directory + dep, only_binaries))
+                dependencies.add(traverse_deps(directory + dep, accumulated_dependencies))
             else:
-                print(s(depth) + f"FILE NOT FOUND: {directory + dep}")
+                logging.error(f"FILE NOT FOUND: {directory + dep}")
                 # and supposedly ld doesn't follow to other sorces of dependencies
 
         else:
             libenv_bin = find_so(dep, paths_ld_lib)
             if libenv_bin:
-                dependencies.add(traverse_deps(depth+1, libenv_bin, only_binaries))
+                dependencies.add(traverse_deps(libenv_bin, accumulated_dependencies))
                 continue
 
             #
             if runpath:
                 runpath_bin = find_so(dep, runpath)
                 if runpath_bin:
-                    dependencies.add(traverse_deps(depth+1, runpath_bin, only_binaries))
+                    dependencies.add(traverse_deps(runpath_bin, accumulated_dependencies))
                     continue
 
             stdlibs_bin = find_so(dep, paths_stdlibs)
             if stdlibs_bin:
                 #print(stdlibs_bin)
-                dependencies.add(traverse_deps(depth+1, stdlibs_bin, only_binaries))
+                dependencies.add(traverse_deps(stdlibs_bin, accumulated_dependencies))
                 continue
 
-            print(s(depth) + "DEP NOT FOUND %s" % dep)
+            logging.error("DEP NOT FOUND %s" % dep)
 
-    return DepNode(name, soname, full_definition, filename, runpath, dependencies)
+    new_dep = DepNode(name, soname, full_definition, filename, runpath, dependencies)
+
+    # check for collisions with existing dependencies
+    # accumulated_dependencies = {'filename': [[DepNode, score], ...]}
+    if new_dep.name in accumulated_dependencies:
+        existing_deps = accumulated_dependencies[new_dep.name]
+        # check for conflicts and save multiple versions if needed
+        if new_dep in existing_deps:
+            # no conflict - this node can be satisfied by one of accumulated ones
+            # increase the score of the node
+            existing_deps[existing_deps.index[new_dep]][1] += 1
+
+    else:
+        accumulated_dependencies[new_dep.name] = [[new_dep, 1]]
+
+    return new_dep
 
 #print(sys.argv)
 #target_name = sys.argv[1]
@@ -179,15 +182,16 @@ if __name__ == "__main__":
             )
 
     parser.add_argument("target_name", help="the name of the binary to parse for dependencies, filename or a name found in $PATH")
-    parser.add_argument("-b", "--binaries",  help="output only the full filenames of all dependencies",
-                        action="store_true")
+    parser.add_argument("-m", "--more", action='store_true',
+                        help="print more: print the accumulated nodes and their scores")
+    parser.add_argument("-d", "--debug", action='store_true', help="DEBUG logging")
 
     args = parser.parse_args()
-    #print(args.target_name)
-    #print(args.binaries)
-    #if args.binaries:
-        #only_binaries = True
-    #print(type(args.target_name))
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
 
     full_filename = None
     if isfile(args.target_name):
@@ -201,11 +205,19 @@ if __name__ == "__main__":
             #print("got a command, found it at %s" % filename)
             full_filename = filename
 
-        except CalledProcessError:
-            print("couldn't parse the argument")
+        except CalledProcessError as e:
             print("usage: ./all_deps.py <cmd|filename>")
+            raise Exception(f"Could not find the binary: which {args.target_name}") from e
 
-    dep_graph = traverse_deps(0, full_filename, args.binaries)
+    acc_deps  = {}
+    dep_graph = traverse_deps(full_filename, acc_deps)
+    #for ch in dep_graph.children:
+    #    print(f'{ch.name} {ch.children}')
+
     for node_list in dep_graph.list_graph():
         print(' > '.join(str(n) for n in node_list))
+
+    if args.more:
+        for name, nodes in acc_deps.items():
+            print(f'{name:20}:  {" ".join(f"[{score:2}] {n.full_definition}" for n, score in nodes)}')
 
