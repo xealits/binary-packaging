@@ -30,6 +30,7 @@ from os import environ
 from os.path import isfile, realpath, basename, dirname
 from subprocess import check_output, CalledProcessError
 
+from dep_node import DepNode, DepDefinition
 
 MAX_DEPTH = 10
 #only_binaries=False
@@ -37,10 +38,12 @@ MAX_DEPTH = 10
 platform = check_output("uname -m", shell=True).decode().strip()
 # has got to be a better way
 #print(platform)
-stdlibs = ['/lib/', '/usr/lib/', "/lib/"+ platform +"-linux-gnu/", "/usr/lib/"+ platform +"-linux-gnu/"]
-#print(stdlibs)
+paths_stdlibs = ['/lib/', '/lib64/', "/lib/"+ platform +"-linux-gnu/", '/usr/lib/', "/usr/lib/"+ platform +"-linux-gnu/"]
+#print(paths_stdlibs)
 
-libenv = environ["LD_LIBRARY_PATH"].split(':')[1:]
+paths_ld_lib = []
+if 'LD_LIBRARY_PATH' in environ:
+    paths_ld_lib = environ["LD_LIBRARY_PATH"].split(':')[1:]
 # example:
 #>>> os.environ["LD_LIBRARY_PATH"]
 #':/opt/AMDAPP/lib/x86_64:/opt/AMDAPP/lib/x86'
@@ -51,6 +54,7 @@ def find_so(so, paths):
     for p in paths:
         if isfile(p + "/" + so):
             return p + "/" + so
+
     return None
 
 def s(depth):
@@ -73,14 +77,17 @@ def traverse_deps(depth, filename, only_binaries=False):
 
     if thebin in parsed_files:
         #print(s(depth) + name, thebin, "SEEN ABOVE")
-        return 0
+        #return 0
+        # TODO no, only test for conflicts
+        pass
 
     # TODO: error-check here:
     try:
         elf_header = [l.decode() for l in check_output("readelf -d %s" % thebin, shell=True).split(b'\n')]
-    except CalledProcessError:
-        print(s(depth) + "FAILED TO READ ELF " + thebin)
-        return 1
+
+    except CalledProcessError as e:
+        #print(s(depth) + "FAILED TO READ ELF " + thebin)
+        raise Exception(f'failed to readelf -d {thebin}') from e
     #print(elf_header)
 
     needed  = []
@@ -94,15 +101,21 @@ def traverse_deps(depth, filename, only_binaries=False):
         elif "RUNPATH" in line:
             runpath = line.split('[')[1].split(']')[0].replace('$ORIGIN', directory).split(':')
 
-    if only_binaries:
-        print(thebin)
-    else:
-        print(s(depth) + name, thebin, "[%s]" %soname)
-        print(s(depth) + "needed:", needed)
-        print(s(depth) + "runpath:", runpath)
+    #
+    # Full definition of this dependency node
+    hashes = frozenset()
+    full_definition = DepDefinition(name, soname, hashes)
+
+    #if only_binaries:
+    #    print(thebin)
+    #else:
+    #    print(s(depth) + name, thebin, "[%s]" %soname)
+    #    print(s(depth) + "needed:", needed)
+    #    print(s(depth) + "runpath:", runpath)
 
     parsed_files[thebin] = {'soname': soname, 'needed': needed, 'runpath': runpath}
 
+    dependencies = set()
     for dep in needed:
         # if it contains a slash -- look relative to binary's directory
         # otherwise in $LD_LIBRARY_PATH
@@ -110,33 +123,33 @@ def traverse_deps(depth, filename, only_binaries=False):
         # or defaults "/lib/" "/usr/lib/" "/lib/"(uname -m)"-linux-gnu/" "/usr/lib/"(uname -m)"-linux-gnu/"
         if '/' in dep:
             if isfile(directory + dep):
-                traverse_deps(depth+1, directory + dep, only_binaries)
+                dependencies.add(traverse_deps(depth+1, directory + dep, only_binaries))
             else:
-                print(s(depth) + "FILE NOT FOUND")
+                print(s(depth) + f"FILE NOT FOUND: {directory + dep}")
                 # and supposedly ld doesn't follow to other sorces of dependencies
+
         else:
-            libenv_bin = find_so(dep, libenv)
+            libenv_bin = find_so(dep, paths_ld_lib)
             if libenv_bin:
-                traverse_deps(depth+1, libenv_bin, only_binaries)
+                dependencies.add(traverse_deps(depth+1, libenv_bin, only_binaries))
                 continue
 
             #
             if runpath:
                 runpath_bin = find_so(dep, runpath)
                 if runpath_bin:
-                    traverse_deps(depth+1, runpath_bin, only_binaries)
+                    dependencies.add(traverse_deps(depth+1, runpath_bin, only_binaries))
                     continue
 
-            stdlibs_bin = find_so(dep, stdlibs)
+            stdlibs_bin = find_so(dep, paths_stdlibs)
             if stdlibs_bin:
                 #print(stdlibs_bin)
-                traverse_deps(depth+1, stdlibs_bin, only_binaries)
+                dependencies.add(traverse_deps(depth+1, stdlibs_bin, only_binaries))
                 continue
 
             print(s(depth) + "DEP NOT FOUND %s" % dep)
 
-            
-    return 0
+    return DepNode(name, soname, full_definition, filename, runpath, dependencies)
 
 #print(sys.argv)
 #target_name = sys.argv[1]
@@ -150,17 +163,21 @@ if __name__ == "__main__":
             Output the full tree or aspects of it."""),
             epilog = textwrap.dedent("""
             Example:
-            $ ./all_deps.py -b ls
-            /bin/ls
-            /lib/x86_64-linux-gnu/libselinux.so.1
-            /lib/x86_64-linux-gnu/libpcre.so.3.13.1
-            /lib/x86_64-linux-gnu/libc-2.19.so
-            /lib/x86_64-linux-gnu/ld-2.19.so
-            /lib/x86_64-linux-gnu/libdl-2.19.so
-            /lib/x86_64-linux-gnu/libacl.so.1.1.0
-            /lib/x86_64-linux-gnu/libattr.so.1.1.0
+
+            $ ./all_deps.py ls
+            ls
+            ls > libselinux.so.1
+            ls > libselinux.so.1 > ld-linux-x86-64.so.2
+            ls > libselinux.so.1 > libpcre2-8.so.0.11.2
+            ls > libselinux.so.1 > libpcre2-8.so.0.11.2 > libc.so.6
+            ls > libselinux.so.1 > libpcre2-8.so.0.11.2 > libc.so.6 > ld-linux-x86-64.so.2
+            ls > libselinux.so.1 > libc.so.6
+            ls > libselinux.so.1 > libc.so.6 > ld-linux-x86-64.so.2
+            ls > libc.so.6
+            ls > libc.so.6 > ld-linux-x86-64.so.2
             """)
             )
+
     parser.add_argument("target_name", help="the name of the binary to parse for dependencies, filename or a name found in $PATH")
     parser.add_argument("-b", "--binaries",  help="output only the full filenames of all dependencies",
                         action="store_true")
@@ -172,16 +189,23 @@ if __name__ == "__main__":
         #only_binaries = True
     #print(type(args.target_name))
 
+    full_filename = None
     if isfile(args.target_name):
         #print("got file", args.target_name)
-        traverse_deps(0, args.target_name, args.binaries)
+        full_filename = args.target_name
+
     else:
         try:
             #print("which %s" % args.target_name)
             filename = check_output("which %s" % args.target_name, shell=True).strip().decode()
             #print("got a command, found it at %s" % filename)
-            traverse_deps(0, filename, args.binaries)
+            full_filename = filename
+
         except CalledProcessError:
             print("couldn't parse the argument")
             print("usage: ./all_deps.py <cmd|filename>")
+
+    dep_graph = traverse_deps(0, full_filename, args.binaries)
+    for node_list in dep_graph.list_graph():
+        print(' > '.join(str(n) for n in node_list))
 
