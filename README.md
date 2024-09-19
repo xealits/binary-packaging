@@ -49,3 +49,34 @@ This tool is not intended as a serious packaging system.
 The idea is to be able to copy paste a bunch of files onto a computer and run them,
 with some headroom for less trivial situations.
 
+# Notes
+
+```
+./all_deps.py -m ls dir
+ls
+ls > libc.so.6
+ls > libc.so.6 > ld-linux-x86-64.so.2
+ls > libselinux.so.1
+ls > libselinux.so.1 > ld-linux-x86-64.so.2
+ls > libselinux.so.1 > libc.so.6
+ls > libselinux.so.1 > libc.so.6 > ld-linux-x86-64.so.2
+ls > libselinux.so.1 > libpcre2-8.so.0.11.2
+ls > libselinux.so.1 > libpcre2-8.so.0.11.2 > libc.so.6
+ls > libselinux.so.1 > libpcre2-8.so.0.11.2 > libc.so.6 > ld-linux-x86-64.so.2
+dir
+dir > libc.so.6
+dir > libc.so.6 > ld-linux-x86-64.so.2
+dir > libselinux.so.1
+dir > libselinux.so.1 > ld-linux-x86-64.so.2
+dir > libselinux.so.1 > libc.so.6
+dir > libselinux.so.1 > libc.so.6 > ld-linux-x86-64.so.2
+dir > libselinux.so.1 > libpcre2-8.so.0.11.2
+dir > libselinux.so.1 > libpcre2-8.so.0.11.2 > libc.so.6
+dir > libselinux.so.1 > libpcre2-8.so.0.11.2 > libc.so.6 > ld-linux-x86-64.so.2
+ld-linux-x86-64.so.2:  [ 2] DepDefinition(filename='ld-linux-x86-64.so.2', version='ld-linux-x86-64.so.2', hash=frozenset())
+libc.so.6           :  [ 4] DepDefinition(filename='libc.so.6', version='libc.so.6', hash=frozenset())
+libpcre2-8.so.0.11.2:  [ 1] DepDefinition(filename='libpcre2-8.so.0.11.2', version='libpcre2-8.so.0', hash=frozenset())
+libselinux.so.1     :  [ 2] DepDefinition(filename='libselinux.so.1', version='libselinux.so.1', hash=frozenset())
+ls                  :  [ 1] DepDefinition(filename='ls', version='', hash=frozenset())
+dir                 :  [ 1] DepDefinition(filename='dir', version='', hash=frozenset())
+```

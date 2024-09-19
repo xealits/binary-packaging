@@ -49,8 +49,6 @@ if 'LD_LIBRARY_PATH' in environ:
 #>>> os.environ["LD_LIBRARY_PATH"]
 #':/opt/AMDAPP/lib/x86_64:/opt/AMDAPP/lib/x86'
 
-parsed_files = {}
-
 def find_so(so, paths):
     for p in paths:
         if isfile(p + "/" + so):
@@ -58,7 +56,7 @@ def find_so(so, paths):
 
     return None
 
-def traverse_deps(filename, accumulated_dependencies={}):
+def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
     """traverse_deps(filename)
 
     Traverse the dependency tree of <filename>.
@@ -69,12 +67,6 @@ def traverse_deps(filename, accumulated_dependencies={}):
 
     thebin = realpath(filename)
     name, directory = basename(thebin), dirname(thebin)
-
-    if thebin in parsed_files:
-        #print(s(depth) + name, thebin, "SEEN ABOVE")
-        #return 0
-        # TODO no, only test for conflicts
-        pass
 
     # TODO: error-check here:
     try:
@@ -101,7 +93,19 @@ def traverse_deps(filename, accumulated_dependencies={}):
     hashes = frozenset()
     full_definition = DepDefinition(name, soname, hashes)
 
-    parsed_files[thebin] = {'soname': soname, 'needed': needed, 'runpath': runpath}
+    if name in accumulated_dependencies:
+        # check if you can reuse the node
+        existing_deps = accumulated_dependencies[name]
+
+        # if the definition matches one of existing nodes, use it
+        defs = [n.full_definition for n, _ in existing_deps]
+        if full_definition in defs:
+            ind = defs.index(full_definition)
+            existing_deps[ind][1] += 1 # increase the reuse score in the graph
+
+            matching_node = existing_deps[ind][0]
+            matching_node.parents.update(parent_nodes)
+            return matching_node
 
     dependencies = set()
     for dep in needed:
@@ -111,7 +115,7 @@ def traverse_deps(filename, accumulated_dependencies={}):
         # or defaults "/lib/" "/usr/lib/" "/lib/"(uname -m)"-linux-gnu/" "/usr/lib/"(uname -m)"-linux-gnu/"
         if '/' in dep:
             if isfile(directory + dep):
-                dependencies.add(traverse_deps(directory + dep, accumulated_dependencies))
+                dependencies.add(traverse_deps(directory + dep, parent_nodes, accumulated_dependencies))
             else:
                 logging.error(f"FILE NOT FOUND: {directory + dep}")
                 # and supposedly ld doesn't follow to other sorces of dependencies
@@ -119,25 +123,25 @@ def traverse_deps(filename, accumulated_dependencies={}):
         else:
             libenv_bin = find_so(dep, paths_ld_lib)
             if libenv_bin:
-                dependencies.add(traverse_deps(libenv_bin, accumulated_dependencies))
+                dependencies.add(traverse_deps(libenv_bin, parent_nodes, accumulated_dependencies))
                 continue
 
             #
             if runpath:
                 runpath_bin = find_so(dep, runpath)
                 if runpath_bin:
-                    dependencies.add(traverse_deps(runpath_bin, accumulated_dependencies))
+                    dependencies.add(traverse_deps(runpath_bin, parent_nodes, accumulated_dependencies))
                     continue
 
             stdlibs_bin = find_so(dep, paths_stdlibs)
             if stdlibs_bin:
                 #print(stdlibs_bin)
-                dependencies.add(traverse_deps(stdlibs_bin, accumulated_dependencies))
+                dependencies.add(traverse_deps(stdlibs_bin, parent_nodes, accumulated_dependencies))
                 continue
 
             logging.error("DEP NOT FOUND %s" % dep)
 
-    new_dep = DepNode(name, soname, full_definition, filename, runpath, dependencies)
+    new_dep = DepNode(name, soname, full_definition, filename, runpath, dependencies, parent_nodes)
 
     # check for collisions with existing dependencies
     # accumulated_dependencies = {'filename': [[DepNode, score], ...]}
@@ -156,6 +160,33 @@ def traverse_deps(filename, accumulated_dependencies={}):
 
 #print(sys.argv)
 #target_name = sys.argv[1]
+
+def targets_to_graph(targets):
+    entry_graph_nodes = []
+    accumulated_nodes = {}
+
+    for targ in targets:
+        full_filename = None
+        if isfile(targ):
+            #print("got file", targ)
+            full_filename = targ
+
+        else:
+            try:
+                #print("which %s" % targ)
+                filename = check_output("which %s" % targ, shell=True).strip().decode()
+                #print("got a command, found it at %s" % filename)
+                full_filename = filename
+
+            except CalledProcessError as e:
+                print("usage: ./all_deps.py <cmd|filename>")
+                raise Exception(f"Could not find the binary: which {targ}") from e
+
+        parent_nodes = set()
+        dep_graph = traverse_deps(full_filename, parent_nodes, accumulated_nodes)
+        entry_graph_nodes.append(dep_graph)
+
+    return entry_graph_nodes, accumulated_nodes
 
 if __name__ == "__main__":
 
@@ -181,7 +212,7 @@ if __name__ == "__main__":
             """)
             )
 
-    parser.add_argument("target_name", help="the name of the binary to parse for dependencies, filename or a name found in $PATH")
+    parser.add_argument("target_names", nargs='+', help="the names of the binaries to parse for dependencies, filename or a name found in $PATH")
     parser.add_argument("-m", "--more", action='store_true',
                         help="print more: print the accumulated nodes and their scores")
     parser.add_argument("-d", "--debug", action='store_true', help="DEBUG logging")
@@ -193,29 +224,16 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.INFO)
 
-    full_filename = None
-    if isfile(args.target_name):
-        #print("got file", args.target_name)
-        full_filename = args.target_name
-
-    else:
-        try:
-            #print("which %s" % args.target_name)
-            filename = check_output("which %s" % args.target_name, shell=True).strip().decode()
-            #print("got a command, found it at %s" % filename)
-            full_filename = filename
-
-        except CalledProcessError as e:
-            print("usage: ./all_deps.py <cmd|filename>")
-            raise Exception(f"Could not find the binary: which {args.target_name}") from e
-
-    acc_deps  = {}
-    dep_graph = traverse_deps(full_filename, acc_deps)
+    #acc_deps  = {}
+    #dep_graph = traverse_deps(full_filename, acc_deps)
     #for ch in dep_graph.children:
     #    print(f'{ch.name} {ch.children}')
 
-    for node_list in dep_graph.list_graph():
-        print(' > '.join(str(n) for n in node_list))
+    dep_graphs, acc_deps = targets_to_graph(args.target_names)
+
+    for dep_graph in dep_graphs:
+        for node_list in dep_graph.list_graph():
+            print(' > '.join(str(n) for n in node_list))
 
     if args.more:
         for name, nodes in acc_deps.items():
