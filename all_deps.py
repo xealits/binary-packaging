@@ -167,9 +167,6 @@ def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
 
     return new_dep
 
-#print(sys.argv)
-#target_name = sys.argv[1]
-
 def targets_to_graph(targets):
     entry_graph_nodes = []
     accumulated_nodes = {}
@@ -227,8 +224,10 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--all-nodes", action='store_true',
                         help="print more: print the accumulated distinct nodes and their scores")
     parser.add_argument("-p", "--print-filenames", action='store_true', help="print found filenames to save them")
+    parser.add_argument("-n", "--print-dependencies", action='store_true', help="print the dependency definitions")
 
     parser.add_argument("-s", "--save-to-store", type=str, help="convert the found files and save to the store dir")
+    parser.add_argument("-e", "--setup-env", type=str, help="the input: env_file,env_dir,store_dir")
 
     parser.add_argument("-d", "--debug", action='store_true', help="DEBUG logging")
 
@@ -259,6 +258,12 @@ if __name__ == "__main__":
         for name, nodes in acc_deps.items():
             for node, score in nodes:
                 print(node.value['full_path'])
+
+    if args.print_dependencies:
+        for name, nodes in acc_deps.items():
+            for node, score in nodes:
+                name, version, hashes = node.full_definition
+                print(f'{name},{version},{":".join(h for h in hashes)}')
 
     if args.save_to_store:
         from store_files import convert_to_store

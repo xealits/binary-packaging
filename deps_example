@@ -1,0 +1,6 @@
+ld-linux-x86-64.so.2,ld-linux-x86-64.so.2,
+libc.so.6,libc.so.6,
+libpcre2-8.so.0,libpcre2-8.so.0.11.2,
+libselinux.so.1,libselinux.so.1,
+dir,dir,
+ls,ls,

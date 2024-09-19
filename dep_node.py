@@ -68,6 +68,14 @@ class GraphNode:
 
 DepDefinition = namedtuple('DepDefinition', 'filename version hash')
 
+def str_to_def(string):
+    name, version, hashstrs = string.split(',')
+    if hashstrs:
+        hashes = set(hashstrs.split(':'))
+    else:
+        hashes = set()
+    return DepDefinition(name, version, hashes)
+
 class DepNode(GraphNode):
     '''
     A specialised graph for dependency nodes.
