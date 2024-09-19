@@ -65,16 +65,19 @@ def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
 
     logging.debug(f'traverse_deps: {filename} {len(accumulated_dependencies)}')
 
-    thebin = realpath(filename)
-    name, directory = basename(thebin), dirname(thebin)
+    # this is a tricky bit:
+    # the filename is the name that is used
+    # it is also the soname
+    # but the real name includes the version of this soname
+    name, directory = basename(filename), dirname(filename)
 
     # TODO: error-check here:
     try:
-        elf_header = [l.decode() for l in check_output("readelf -d %s" % thebin, shell=True).split(b'\n')]
+        elf_header = [l.decode() for l in check_output("readelf -d %s" % filename, shell=True).split(b'\n')]
 
     except CalledProcessError as e:
-        #print("FAILED TO READ ELF " + thebin)
-        raise Exception(f'failed to readelf -d {thebin}') from e
+        #print("FAILED TO READ ELF " + filename)
+        raise Exception(f'failed to readelf -d {filename}') from e
     #print(elf_header)
 
     needed  = []
@@ -88,10 +91,16 @@ def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
         elif "RUNPATH" in line:
             runpath = line.split('[')[1].split(']')[0].replace('$ORIGIN', directory).split(':')
 
+    #version = soname
+    # no, version is the real name of the binary, not the soname
+    # soname is the interface name
+    thebin = realpath(filename)
+    version = basename(thebin)
+
     #
     # Full definition of this dependency node
     hashes = frozenset()
-    full_definition = DepDefinition(name, soname, hashes)
+    full_definition = DepDefinition(name, version, hashes)
 
     if name in accumulated_dependencies:
         # check if you can reuse the node
@@ -141,7 +150,7 @@ def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
 
             logging.error("DEP NOT FOUND %s" % dep)
 
-    new_dep = DepNode(name, soname, full_definition, filename, runpath, dependencies, parent_nodes)
+    new_dep = DepNode(name, soname, version, full_definition, filename, runpath, dependencies, parent_nodes)
 
     # check for collisions with existing dependencies
     # accumulated_dependencies = {'filename': [[DepNode, score], ...]}
@@ -213,8 +222,14 @@ if __name__ == "__main__":
             )
 
     parser.add_argument("target_names", nargs='+', help="the names of the binaries to parse for dependencies, filename or a name found in $PATH")
-    parser.add_argument("-m", "--more", action='store_true',
-                        help="print more: print the accumulated nodes and their scores")
+
+    parser.add_argument("-g", "--print-graph", action='store_true', help="print graph nodes")
+    parser.add_argument("-a", "--all-nodes", action='store_true',
+                        help="print more: print the accumulated distinct nodes and their scores")
+    parser.add_argument("-p", "--print-filenames", action='store_true', help="print found filenames to save them")
+
+    parser.add_argument("-s", "--save-to-store", type=str, help="convert the found files and save to the store dir")
+
     parser.add_argument("-d", "--debug", action='store_true', help="DEBUG logging")
 
     args = parser.parse_args()
@@ -231,11 +246,25 @@ if __name__ == "__main__":
 
     dep_graphs, acc_deps = targets_to_graph(args.target_names)
 
-    for dep_graph in dep_graphs:
-        for node_list in dep_graph.list_graph():
-            print(' > '.join(str(n) for n in node_list))
+    if args.print_graph:
+        for dep_graph in dep_graphs:
+            for node_list in dep_graph.list_graph():
+                print(' > '.join(str(n) for n in node_list))
 
-    if args.more:
+    if args.all_nodes:
         for name, nodes in acc_deps.items():
             print(f'{name:20}:  {" ".join(f"[{score:2}] {n.full_definition}" for n, score in nodes)}')
+
+    if args.print_filenames:
+        for name, nodes in acc_deps.items():
+            for node, score in nodes:
+                print(node.value['full_path'])
+
+    if args.save_to_store:
+        from store_files import convert_to_store
+
+        store_dir = args.save_to_store
+        for name, nodes in acc_deps.items():
+            for node, score in nodes:
+                convert_to_store(node, store_dir)
 

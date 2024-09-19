@@ -75,7 +75,7 @@ class DepNode(GraphNode):
     TODO: try it out and see whether it makes sense.
     '''
 
-    def __init__(self, filename, soname, full_definition, full_path='', rpath='', needed=set(), parent_nodes=set()):
+    def __init__(self, filename, soname, version, full_definition, full_path='', rpath='', needed=set(), parent_nodes=set()):
         assert filename == full_definition.filename
         assert isinstance(full_definition, DepDefinition)
         self.full_definition = full_definition
@@ -83,6 +83,7 @@ class DepNode(GraphNode):
 
         value = {'full_definition': full_definition,
                'soname': soname,
+               'version': version,
                'rpath': rpath,
                'full_path': full_path}
 
