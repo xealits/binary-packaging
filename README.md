@@ -52,6 +52,12 @@ with some headroom for less trivial situations.
 # Notes
 
 ```
+$ ./all_deps.py -s temp/store1/ ls dir
+$ ./all_deps.py -n ls dir > deps_example.txt
+$ ./store_files.py deps_example.txt temp/env1 temp/store1/
+```
+
+```
 $ ./all_deps.py -g -a -n -p ls dir
 ls
 ls > libselinux.so.1
@@ -91,9 +97,5 @@ libpcre2-8.so.0,libpcre2-8.so.0.11.2,
 libselinux.so.1,libselinux.so.1,
 ls,ls,
 dir,dir,
-```
-
-```
-$ ./all_deps.py -n ls dir > deps_example.txt
 ```
 

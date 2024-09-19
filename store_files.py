@@ -120,9 +120,48 @@ if __name__ == "__main__":
             #      and check the collisions
             # but let's just dump it in 1 dir for now
 
+    '''
+    At this point, there is a list of dependencies from a file,
+    and there is the store directory - you can readelf -d the binaries there
+    to get the _names_ of their dependencies, without the version and hashtag.
+
+    What should be there is some way to specify the version and hashtags
+    that must be used for the dependencies of some binaries.
+    If it is not specified, then grab any file of the latest version of
+    the binary.
+
+    So, the file specifies the binaries that you want to get in the environment,
+    and additional rules for dependencies.
+
+    The additional rules specify the dependency of some binary. I.e. the binary
+    itself says only the name of the dependency, which is the interface name.
+    But the rule should also specify that _for this binary_ this dependency name
+    must come with some version or just some hashtag.
+
+    Then, how it works when I extend the environment with some other versions?
+    The new directory will come first in the PATH, and it will have common/ point
+    to the old directory. The other versions compose a new set of rules.
+    These rules can be compared with the old rules, whether they agree. If not,
+    then the new directory is like a graph extension for version conflicts?
+    The idea was that the PATH directories are for different executables.
+    Different directories is like graph deviations for version conflicts in
+    executables. But some dependencies can be shared.
+
+    The easiest would be to just symlink _all_ dependencies in the new PATH
+    directories.
+
+    Then, there could be sharing too: you probably have to traverse
+    the directories down the common/ symlinks (which are supposed to be on PATH),
+    looking for your dependency. I.e. for these new binaries, you update the rules,
+    overwritting the old rules when needed. Then you check the common/ first,
+    if a rule is not fullfilled, check the store and bring the new version
+    to the new PATH directory.
+    '''
+
     #
     makedirs(args.env_dir, exist_ok=True)
     for dep in dependency_defs:
         full_path = find_dep(dep, args.store_dir)
         # symlink it in the args.env_dir
         os.symlink(full_path, args.env_dir + '/' + dep.filename)
+
