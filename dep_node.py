@@ -67,13 +67,14 @@ class GraphNode:
             print(delimeter.join(str(i) for i in opt))
 
 DepDefinition = namedtuple('DepDefinition', 'filename version hash')
+# definition hashes is a frozenset
 
 def str_to_def(string):
     name, version, hashstrs = string.split(',')
     if hashstrs:
-        hashes = set(hashstrs.split(':'))
+        hashes = frozenset(hashstrs.split(':'))
     else:
-        hashes = set()
+        hashes = frozenset()
     return DepDefinition(name, version, hashes)
 
 class DepNode(GraphNode):

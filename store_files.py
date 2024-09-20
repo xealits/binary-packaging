@@ -17,6 +17,7 @@ from shutil import copy2 #copyfile
 import logging
 
 from dep_node import DepNode, DepDefinition, str_to_def
+from all_deps import readelf_dynamic
 
 
 def set_rpath(filename):
@@ -63,7 +64,16 @@ def convert_to_store(dep_node, store_dir):
     #copyfile(tempfile, store_path + '/' + store_file)
     copy2(tempfile, store_path + '/' + store_file)
 
-def find_dep(bindef, store_dir, dep_rules=[]):
+def find_dep(bindef, store_dir, dep_rules=[]) -> dict:
+    '''
+    find_dep(bindef, store_dir, dep_rules=[]) -> dict
+
+    it returns a dictionary of accumulated_definitions
+    (which is similar to accumulated_dependencies in the all_deps.py)
+    it is a dictionary of {bin_name: [[DepNode, score] ...]}
+    where DepNode are the binaries in the store directory
+    '''
+
     assert isdir(store_dir)
     store_dir = realpath(store_dir)
 
@@ -94,7 +104,7 @@ def parse_env_file(env_file) -> dict:
     where rules is a list of file definitions for dependencies
     '''
 
-    dependency_defs = []
+    binary_defs = {}
 
     # the file should probably be some YAML or TOML
     # I don't want JSON, because I want shortcuts for the user
@@ -111,12 +121,12 @@ def parse_env_file(env_file) -> dict:
                 bindef = str_to_def(defstr.strip())
                 dep_rules = []
 
-            dependency_defs.append((bindef, dep_rules))
+            binary_defs[bindef] = dep_rules
             # TODO nope, I need to build the dependency graph out of this
             #      and check the collisions
             # but let's just dump it in 1 dir for now
 
-    return dependency_defs
+    return binary_defs
 
 if __name__ == "__main__":
 
@@ -201,7 +211,7 @@ if __name__ == "__main__":
 
     #
     makedirs(args.env_dir, exist_ok=True)
-    for bindef, dep_rules in dependency_defs:
+    for bindef, dep_rules in dependency_defs.items():
         full_path = find_dep(bindef, args.store_dir, dep_rules)
 
         # symlink it in the args.env_dir

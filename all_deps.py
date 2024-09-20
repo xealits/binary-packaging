@@ -56,6 +56,64 @@ def find_so(so, paths):
 
     return None
 
+def readelf_dynamic(elf_filename):
+    # TODO: error-check here:
+    try:
+        elf_header = [l.decode() for l in check_output("readelf -d %s" % elf_filename, shell=True).split(b'\n')]
+
+    except CalledProcessError as e:
+        #print("FAILED TO READ ELF " + elf_filename)
+        raise Exception(f'failed to readelf -d {elf_filename}') from e
+    #print(elf_header)
+
+    needed  = []
+    runpath = []
+    soname  = ""
+    for line in elf_header:
+        if "NEEDED" in line:
+            needed.append( line.split('[')[1].split(']')[0] )
+        elif "SONAME" in line:
+            soname = line.split('[')[1].split(']')[0]
+        elif "RUNPATH" in line:
+            runpath = line.split('[')[1].split(']')[0].replace('$ORIGIN', directory).split(':')
+
+    return needed, runpath, soname
+
+def check_in_accumulated_nodes(full_definition, accumulated_dependencies):
+    #
+    name = full_definition.filename
+    if name not in accumulated_dependencies:
+        return None
+
+    # check if you can reuse the node
+    existing_deps = accumulated_dependencies[name]
+
+    # if the definition matches one of existing nodes, use it
+    defs = [n.full_definition for n, _ in existing_deps]
+    if full_definition in defs:
+        ind = defs.index(full_definition)
+        existing_deps[ind][1] += 1 # increase the reuse score in the graph
+
+        matching_node = existing_deps[ind][0]
+        #matching_node.parents.update(parent_nodes)
+        return matching_node
+
+    return None
+
+def add_to_accumulated_nodes(new_node, accumulated_dependencies):
+    # check for collisions with existing dependencies
+    # accumulated_dependencies = {'filename': [[DepNode, score], ...]}
+    if new_node.name in accumulated_dependencies:
+        existing_deps = accumulated_dependencies[new_node.name]
+        # check for conflicts and save multiple versions if needed
+        if new_node in existing_deps:
+            # no conflict - this node can be satisfied by one of accumulated ones
+            # increase the score of the node
+            existing_deps[existing_deps.index[new_node]][1] += 1
+
+    else:
+        accumulated_dependencies[new_node.name] = [[new_node, 1]]
+
 def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
     """traverse_deps(filename)
 
@@ -71,25 +129,7 @@ def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
     # but the real name includes the version of this soname
     name, directory = basename(filename), dirname(filename)
 
-    # TODO: error-check here:
-    try:
-        elf_header = [l.decode() for l in check_output("readelf -d %s" % filename, shell=True).split(b'\n')]
-
-    except CalledProcessError as e:
-        #print("FAILED TO READ ELF " + filename)
-        raise Exception(f'failed to readelf -d {filename}') from e
-    #print(elf_header)
-
-    needed  = []
-    runpath = []
-    soname  = ""
-    for line in elf_header:
-        if "NEEDED" in line:
-            needed.append( line.split('[')[1].split(']')[0] )
-        elif "SONAME" in line:
-            soname = line.split('[')[1].split(']')[0]
-        elif "RUNPATH" in line:
-            runpath = line.split('[')[1].split(']')[0].replace('$ORIGIN', directory).split(':')
+    needed, runpath, soname = readelf_dynamic(filename)
 
     #version = soname
     # no, version is the real name of the binary, not the soname
@@ -99,22 +139,13 @@ def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
 
     #
     # Full definition of this dependency node
-    hashes = frozenset()
+    hashes = frozenset() # no hashes in this case of extracting from existing system
     full_definition = DepDefinition(name, version, hashes)
 
-    if name in accumulated_dependencies:
-        # check if you can reuse the node
-        existing_deps = accumulated_dependencies[name]
-
-        # if the definition matches one of existing nodes, use it
-        defs = [n.full_definition for n, _ in existing_deps]
-        if full_definition in defs:
-            ind = defs.index(full_definition)
-            existing_deps[ind][1] += 1 # increase the reuse score in the graph
-
-            matching_node = existing_deps[ind][0]
-            matching_node.parents.update(parent_nodes)
-            return matching_node
+    matching_node = check_in_accumulated_nodes(full_definition, accumulated_dependencies)
+    if matching_node is not None:
+        matching_node.parents.update(parent_nodes)
+        return matching_node
 
     dependencies = set()
     for dep in needed:
@@ -152,18 +183,7 @@ def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
 
     new_dep = DepNode(name, soname, version, full_definition, filename, runpath, dependencies, parent_nodes)
 
-    # check for collisions with existing dependencies
-    # accumulated_dependencies = {'filename': [[DepNode, score], ...]}
-    if new_dep.name in accumulated_dependencies:
-        existing_deps = accumulated_dependencies[new_dep.name]
-        # check for conflicts and save multiple versions if needed
-        if new_dep in existing_deps:
-            # no conflict - this node can be satisfied by one of accumulated ones
-            # increase the score of the node
-            existing_deps[existing_deps.index[new_dep]][1] += 1
-
-    else:
-        accumulated_dependencies[new_dep.name] = [[new_dep, 1]]
+    add_to_accumulated_nodes(new_dep, accumulated_dependencies)
 
     return new_dep
 
