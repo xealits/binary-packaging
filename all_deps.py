@@ -66,6 +66,9 @@ def readelf_dynamic(elf_filename):
         raise Exception(f'failed to readelf -d {elf_filename}') from e
     #print(elf_header)
 
+    #name, directory = basename(filename), dirname(filename)
+    directory = dirname(elf_filename)
+
     needed  = []
     runpath = []
     soname  = ""
@@ -90,7 +93,10 @@ def check_in_accumulated_nodes(full_definition, accumulated_dependencies):
 
     # if the definition matches one of existing nodes, use it
     defs = [n.full_definition for n, _ in existing_deps]
-    if full_definition in defs:
+    if full_definition in defs: # TODO: this won't work well, right?
+        # definitions are just tuples
+        # they will compare hashes and versions literally
+        # without the meaning
         ind = defs.index(full_definition)
         existing_deps[ind][1] += 1 # increase the reuse score in the graph
 
@@ -235,6 +241,7 @@ if __name__ == "__main__":
             ls > libselinux.so.1 > libc.so.6 > ld-linux-x86-64.so.2
             ls > libc.so.6
             ls > libc.so.6 > ld-linux-x86-64.so.2
+            $ ./all_deps.py -g -a -n -p ls dir
             """)
             )
 

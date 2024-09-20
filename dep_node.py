@@ -66,8 +66,63 @@ class GraphNode:
         for opt in self.list_graph():
             print(delimeter.join(str(i) for i in opt))
 
-DepDefinition = namedtuple('DepDefinition', 'filename version hash')
+_DepDefinitionTuple = namedtuple('_DepDefinitionTuple', 'filename version hashes')
 # definition hashes is a frozenset
+
+class DepDefinition(_DepDefinitionTuple):
+    def __init__(self, *args):
+        #super().__init__(*args) # why namedtuple does not need arguments?
+        super().__init__()
+        assert isinstance(self.hashes, frozenset)
+
+    def __hash__(self):
+        return hash((self.filename, self.version, self.hashes))
+
+    def __eq__(self, other):
+        if not isinstance(other, DepDefinition):
+            return False
+
+        return self.eq_fname(other) and \
+               self.eq_version(other) and \
+               self.eq_hash(other)
+
+    def eq_fname(self, other_dep):
+        '''
+        same file name - same file in the dependency directory.
+        Either re-use the same file for both dependencies,
+        or resolve the version conflict.
+        '''
+        return self.filename == other_dep.filename
+
+    def eq_version(self, other_dep):
+        '''
+        '''
+        # if version strings are empty - it matches any version
+        if not self.version or not other_dep.version:
+            return True
+
+        return self.version != other_dep.version
+        # TODO: support version ranges, use some module for semantic versions
+
+    def eq_hash(self, other_dep):
+        '''
+        '''
+        self_hashes  = self.hashes
+        other_hashes = other_dep.hashes
+        # supports sets of hashes
+        assert isinstance(self_hashes, frozenset) and isinstance(other_hashes, frozenset)
+
+        # if any of the hash sets is empty - no conflict
+        if len(self_hashes) == 0 or len(other_hashes) == 0:
+            return False
+
+        return len(self_hashes and other_hashes) == 0
+
+    def no_conflict(self, other_dep):
+        return not self.eq_fname(other_dep) and \
+               not self.eq_version(other_dep) and \
+               not self.eq_hash(other_dep)
+
 
 def str_to_def(string):
     name, version, hashstrs = string.split(',')
@@ -112,9 +167,7 @@ class DepNode(GraphNode):
         if not isinstance(other, DepNode):
             return False
 
-        return self.eq_fname(other) and \
-               self.eq_version(other) and \
-               self.eq_hash(other)
+        return self.full_definition == other.full_definition
 
     def eq_fname(self, other_dep):
         '''
@@ -122,36 +175,20 @@ class DepNode(GraphNode):
         Either re-use the same file for both dependencies,
         or resolve the version conflict.
         '''
-        return self.full_definition.filename == other_dep.full_definition.filename
+        return self.full_definition.eq_fname(other_dep.full_definition)
 
     def eq_version(self, other_dep):
         '''
         '''
-        # if version strings are empty - it matches any version
-        if not self.full_definition.version or not other_dep.full_definition.version:
-            return True
-
-        return self.full_definition.version != other_dep.full_definition.version
-        # TODO: support version ranges, use some module for semantic versions
+        return self.full_definition.eq_version(other_dep.full_definition)
 
     def eq_hash(self, other_dep):
         '''
         '''
-        self_hashes  = self.full_definition.hash
-        other_hashes = other_dep.full_definition.hash
-        # supports sets of hashes
-        assert isinstance(self_hashes, frozenset) and isinstance(other_hashes, frozenset)
-
-        # if any of the hash sets is empty - no conflict
-        if len(self_hashes) == 0 or len(other_hashes) == 0:
-            return False
-
-        return len(self_hashes and other_hashes) == 0
+        return self.full_definition.eq_hash(other_dep.full_definition)
 
     def no_conflict(self, other_dep):
-        return not self.eq_fname(other_dep) and \
-               not self.eq_version(other_dep) and \
-               not self.eq_hash(other_dep)
+        return self.full_definition.no_conflict(other_dep.full_definition)
 
 """
 I might want to search through the graph

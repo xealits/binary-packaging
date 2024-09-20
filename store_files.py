@@ -17,7 +17,7 @@ from shutil import copy2 #copyfile
 import logging
 
 from dep_node import DepNode, DepDefinition, str_to_def
-from all_deps import readelf_dynamic
+from all_deps import readelf_dynamic, add_to_accumulated_nodes
 
 
 def set_rpath(filename):
@@ -64,11 +64,26 @@ def convert_to_store(dep_node, store_dir):
     #copyfile(tempfile, store_path + '/' + store_file)
     copy2(tempfile, store_path + '/' + store_file)
 
-def find_dep(bindef, store_dir, dep_rules=[]) -> dict:
+def storefile_to_def(bin_path) -> DepDefinition:
     '''
-    find_dep(bindef, store_dir, dep_rules=[]) -> dict
+    storefile_to_def(bin_path)
 
-    it returns a dictionary of accumulated_definitions
+    DepDefinition of a concrete file in a store:
+    name,version,hash
+    '''
+
+    full_definition = str_to_def(basename(bin_path))
+    # there is exactly 1 hashtag in DepDefinition of a concrete file
+    assert len(full_definition.hashes) == 1
+    # TODO: there should be a way to confirm that the version is also specified
+
+    return full_definition
+
+def find_dep(bindef, store_dir, dep_rules=[], parent_nodes=set(), accumulated_binaries={}):
+    '''
+    find_dep(bindef, store_dir, dep_rules=[], accumulated_binaries={}):
+
+    it recursively updates accumulated_binaries dictionary
     (which is similar to accumulated_dependencies in the all_deps.py)
     it is a dictionary of {bin_name: [[DepNode, score] ...]}
     where DepNode are the binaries in the store directory
@@ -81,20 +96,36 @@ def find_dep(bindef, store_dir, dep_rules=[]) -> dict:
     dir_bins = store_dir + '/' + fname + '/' + version
     assert isdir(dir_bins)
 
-    if len(bindef.hash) == 0:
+    bin_path = None
+    if len(bindef.hashes) == 0:
         # then any file will work
         any_file = os.listdir(dir_bins)[0]
-        return dir_bins + '/' + any_file
+        bin_path = dir_bins + '/' + any_file
 
     #
     # find the first binary that passes the hash requirement
-    for hsh in bindef.hash:
+    for hsh in bindef.hashes:
         file_bin = f'{fname},{version},{hsh}'
         full_path = dir_bins + '/' + file_bin
-        if isfile(full_path):
-            return full_path
 
-    raise Exception(f"Could not find a dependency in store {store_dir}: {bindef}")
+        if isfile(full_path):
+            bin_path = full_path
+
+        else:
+            raise Exception(f"Could not find a file in store {store_dir}: {bindef}")
+
+    #
+    # now, there is a path to the binary: bin_path
+    # it has some dependencies (readelf -d)
+    # and some rules for them (dep_rules)
+    # make the rules subset for the dependencies, and find them
+    #
+    full_definition = storefile_to_def(bin_path)
+
+    needed, runpath, soname = readelf_dynamic(bin_path)
+    dependencies = set()
+    new_bin = DepNode(fname, soname, version, full_definition, bin_path, runpath, dependencies, parent_nodes)
+    add_to_accumulated_nodes(new_bin, accumulated_binaries)
 
 def parse_env_file(env_file) -> dict:
     '''
@@ -211,13 +242,18 @@ if __name__ == "__main__":
 
     #
     makedirs(args.env_dir, exist_ok=True)
+    accumulated_binaries = {}
     for bindef, dep_rules in dependency_defs.items():
-        full_path = find_dep(bindef, args.store_dir, dep_rules)
+        #full_path = find_dep(bindef, args.store_dir, dep_rules)
+        find_dep(bindef, args.store_dir, dep_rules, set(), accumulated_binaries)
+
+    for name, defs in accumulated_binaries.items():
+        full_path = defs[0][0].value['full_path']
 
         # symlink it in the args.env_dir
         if args.test:
-            print(f"os.symlink({full_path}, {args.env_dir} + '/' + {bindef.filename})")
+            print(f"os.symlink({full_path}, {args.env_dir} + '/' + {name})")
 
         else:
-            os.symlink(full_path, args.env_dir + '/' + bindef.filename)
+            os.symlink(full_path, args.env_dir + '/' + name)
 
