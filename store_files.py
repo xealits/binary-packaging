@@ -63,29 +63,60 @@ def convert_to_store(dep_node, store_dir):
     #copyfile(tempfile, store_path + '/' + store_file)
     copy2(tempfile, store_path + '/' + store_file)
 
-def find_dep(dependency_def, store_dir):
+def find_dep(bindef, store_dir, dep_rules=[]):
     assert isdir(store_dir)
     store_dir = realpath(store_dir)
 
-    fname, version = dependency_def.filename, dependency_def.version
+    fname, version = bindef.filename, bindef.version
     dir_bins = store_dir + '/' + fname + '/' + version
     assert isdir(dir_bins)
 
-    if len(dependency_def.hash) == 0:
+    if len(bindef.hash) == 0:
         # then any file will work
         any_file = os.listdir(dir_bins)[0]
         return dir_bins + '/' + any_file
 
     #
     # find the first binary that passes the hash requirement
-    for hsh in dependency_def.hash:
+    for hsh in bindef.hash:
         file_bin = f'{fname},{version},{hsh}'
         full_path = dir_bins + '/' + file_bin
         if isfile(full_path):
             return full_path
 
-    raise Exception(f"Could not find a dependency in store {store_dir}: {dependency_def}")
+    raise Exception(f"Could not find a dependency in store {store_dir}: {bindef}")
 
+def parse_env_file(env_file) -> dict:
+    '''
+    parse_env_file(env_file)
+
+    returns a dictionary of {file_definition: [rules]}
+    where rules is a list of file definitions for dependencies
+    '''
+
+    dependency_defs = []
+
+    # the file should probably be some YAML or TOML
+    # I don't want JSON, because I want shortcuts for the user
+    with open(env_file) as f:
+        for defstr in f.readlines():
+            # currently the definition string is
+            # <binary definition> > <dependency def> <another> ...
+            if '>' in defstr:
+                bindef, dep_rules = defstr.split('>')
+                bindef = str_to_def(bindef.strip())
+                dep_rules = [str_to_def(rule) for rule in dep_rules.split()]
+
+            else:
+                bindef = str_to_def(defstr.strip())
+                dep_rules = []
+
+            dependency_defs.append((bindef, dep_rules))
+            # TODO nope, I need to build the dependency graph out of this
+            #      and check the collisions
+            # but let's just dump it in 1 dir for now
+
+    return dependency_defs
 
 if __name__ == "__main__":
 
@@ -94,7 +125,8 @@ if __name__ == "__main__":
             description = textwrap.dedent("""Setup an environment from a store with patched binaries"""),
             epilog = textwrap.dedent("""
             Example:
-
+            ./store_files.py    env_example1.txt temp/env1 temp/store1/
+            ./store_files.py -t env_example2.txt temp/env1 temp/store1/
             """)
             )
 
@@ -102,6 +134,7 @@ if __name__ == "__main__":
     parser.add_argument("env_dir",   type=str, help="directory where to set up symlinks to binaries")
     parser.add_argument("store_dir", type=str, help="directory with the stored patched binaries")
 
+    parser.add_argument("-t", "--test",  action='store_true', help="dry pass, just print symlink commands, don't execute them")
     parser.add_argument("-d", "--debug", action='store_true', help="DEBUG logging")
 
     args = parser.parse_args()
@@ -111,14 +144,7 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.INFO)
 
-
-    dependency_defs = []
-    with open(args.env_file) as f:
-        for depstr in f.readlines():
-            dependency_defs.append(str_to_def(depstr.strip()))
-            # TODO nope, I need to build the dependency graph out of this
-            #      and check the collisions
-            # but let's just dump it in 1 dir for now
+    dependency_defs = parse_env_file(args.env_file)
 
     '''
     At this point, there is a list of dependencies from a file,
@@ -175,8 +201,13 @@ if __name__ == "__main__":
 
     #
     makedirs(args.env_dir, exist_ok=True)
-    for dep in dependency_defs:
-        full_path = find_dep(dep, args.store_dir)
+    for bindef, dep_rules in dependency_defs:
+        full_path = find_dep(bindef, args.store_dir, dep_rules)
+
         # symlink it in the args.env_dir
-        os.symlink(full_path, args.env_dir + '/' + dep.filename)
+        if args.test:
+            print(f"os.symlink({full_path}, {args.env_dir} + '/' + {bindef.filename})")
+
+        else:
+            os.symlink(full_path, args.env_dir + '/' + bindef.filename)
 
