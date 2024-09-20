@@ -141,7 +141,8 @@ def traverse_deps(filename, parent_nodes=set(), accumulated_dependencies={}):
     # no, version is the real name of the binary, not the soname
     # soname is the interface name
     thebin = realpath(filename)
-    version = basename(thebin)
+    version = basename(thebin) # TODO: is there some better way to get the binary version?
+    # now, the binary "version" = its filename, i.e. its "interface name"
 
     #
     # Full definition of this dependency node

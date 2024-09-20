@@ -17,7 +17,7 @@ from shutil import copy2 #copyfile
 import logging
 
 from dep_node import DepNode, DepDefinition, str_to_def
-from all_deps import readelf_dynamic, add_to_accumulated_nodes
+from all_deps import readelf_dynamic, add_to_accumulated_nodes, check_in_accumulated_nodes
 
 
 def set_rpath(filename):
@@ -79,23 +79,44 @@ def storefile_to_def(bin_path) -> DepDefinition:
 
     return full_definition
 
-def find_dep(bindef, store_dir, dep_rules=[], parent_nodes=set(), accumulated_binaries={}):
+def find_dep(bindef, store_dir, dep_rules={}, parent_nodes=set(), accumulated_binaries={}):
     '''
-    find_dep(bindef, store_dir, dep_rules=[], accumulated_binaries={}):
+    find_dep(bindef, store_dir, dep_rules={}, accumulated_binaries={}):
 
     it recursively updates accumulated_binaries dictionary
-    (which is similar to accumulated_dependencies in the all_deps.py)
+    (which is similar to accumulated_binaries in the all_deps.py)
     it is a dictionary of {bin_name: [[DepNode, score] ...]}
     where DepNode are the binaries in the store directory
     '''
 
+    assert isinstance(parent_nodes, set)
     assert isdir(store_dir)
     store_dir = realpath(store_dir)
 
     fname, version = bindef.filename, bindef.version
-    dir_bins = store_dir + '/' + fname + '/' + version
-    assert isdir(dir_bins)
+    dir_fname = store_dir + '/' + fname
+    assert isdir(dir_fname), dir_fname
 
+    #
+    # if version is empty - match any
+    if version == '':
+        version = os.listdir(dir_fname)[0]
+
+    dir_bins = dir_fname + '/' + version
+    assert isdir(dir_bins), dir_bins
+
+    #
+    # check if this definition was already found
+    matching_bin = check_in_accumulated_nodes(bindef, accumulated_binaries)
+    if matching_bin is not None:
+        matching_bin.parents.update(parent_nodes)
+        # just return -- no need to search for dependencies
+        # as they must be already found
+        return #matching_bin
+
+    #
+    # otherwise, it is a new definition
+    # find it in the store
     bin_path = None
     if len(bindef.hashes) == 0:
         # then any file will work
@@ -121,18 +142,42 @@ def find_dep(bindef, store_dir, dep_rules=[], parent_nodes=set(), accumulated_bi
     # make the rules subset for the dependencies, and find them
     #
     full_definition = storefile_to_def(bin_path)
-
     needed, runpath, soname = readelf_dynamic(bin_path)
+
     dependencies = set()
     new_bin = DepNode(fname, soname, version, full_definition, bin_path, runpath, dependencies, parent_nodes)
     add_to_accumulated_nodes(new_bin, accumulated_binaries)
+
+    #
+    # find the dependencies in the store
+    # and add them to accumulated_binaries
+    #dep_rules_for_this_bin = dep_rules[fname]
+    #dep_rules_for_this_bin = dep_rules[full_definition]
+    # TODO this won't work! the definitions are hashed - they won't match loose versions etc!
+    dep_rules_for_this_bin = dep_rules.get(full_definition, {})
+
+    for dep_name in needed:
+
+        if dep_name in dep_rules_for_this_bin:
+            #def find_dep(bindef, store_dir, dep_rules={}, parent_nodes=set(), accumulated_binaries={}):
+            #find_dep(bindef, args.store_dir, dep_rules, set(), accumulated_binaries)
+            # TODO: this is the bit that gets complicated
+            #       dependency rules is a dictionary for the whole environment, not just 1 binary
+            #       it is {<bin_def>: {name: <def>, ...}}
+            dep_def = dep_rules_for_this_bin[dep_name]
+
+        else:
+            dep_def = DepDefinition(dep_name, '', frozenset())
+
+        find_dep(dep_def, store_dir, dep_rules, {new_bin}, accumulated_binaries)
 
 def parse_env_file(env_file) -> dict:
     '''
     parse_env_file(env_file)
 
-    returns a dictionary of {file_definition: [rules]}
-    where rules is a list of file definitions for dependencies
+    returns a dictionary of {file_definition: {rules}}
+    where rules is a dict of file definitions for dependencies:
+    name: DepDefinition
     '''
 
     binary_defs = {}
@@ -143,14 +188,16 @@ def parse_env_file(env_file) -> dict:
         for defstr in f.readlines():
             # currently the definition string is
             # <binary definition> > <dependency def> <another> ...
+
             if '>' in defstr:
                 bindef, dep_rules = defstr.split('>')
                 bindef = str_to_def(bindef.strip())
-                dep_rules = [str_to_def(rule) for rule in dep_rules.split()]
+                dep_rules_list = [str_to_def(rs) for rs in dep_rules.split()]
+                dep_rules = {rule.filename: rule for rule in dep_rules_list}
 
             else:
                 bindef = str_to_def(defstr.strip())
-                dep_rules = []
+                dep_rules = {}
 
             binary_defs[bindef] = dep_rules
             # TODO nope, I need to build the dependency graph out of this
