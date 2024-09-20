@@ -158,6 +158,21 @@ if __name__ == "__main__":
     to the new PATH directory.
     '''
 
+    '''
+    The rules do not have to nest, don't they? I.e. each rules is concerned only
+    with the dependencies of the given file.
+
+    Executable foo depends on libbar.so, which depends on libbaz.so. The rules
+    specify one dependency level at a time:
+
+    foo,ver,hashes > libbar.so,,hash
+    libbar.so,,hash > libbaz.so,,hash
+    qwe,, > libbar.so,ver,
+
+    It will need to find files by the hashes in the names, and by the versions.
+    Just use wildcards without / for the versions?
+    '''
+
     #
     makedirs(args.env_dir, exist_ok=True)
     for dep in dependency_defs:

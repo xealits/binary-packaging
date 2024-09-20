@@ -126,6 +126,10 @@ class DepNode(GraphNode):
     def eq_version(self, other_dep):
         '''
         '''
+        # if version strings are empty - it matches any version
+        if not self.full_definition.version or not other_dep.full_definition.version:
+            return True
+
         return self.full_definition.version != other_dep.full_definition.version
         # TODO: support version ranges, use some module for semantic versions
 

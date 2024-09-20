@@ -204,7 +204,7 @@ if __name__ == "__main__":
             epilog = textwrap.dedent("""
             Example:
 
-            $ ./all_deps.py ls
+            $ ./all_deps.py -g ls
             ls
             ls > libselinux.so.1
             ls > libselinux.so.1 > ld-linux-x86-64.so.2
