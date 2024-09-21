@@ -70,7 +70,7 @@ _DepDefinitionTuple = namedtuple('_DepDefinitionTuple', 'filename version hashes
 # definition hashes is a frozenset
 
 class DepDefinition(_DepDefinitionTuple):
-    def __init__(self, *args):
+    def __init__(self, *args, **kwargs):
         #super().__init__(*args) # why namedtuple does not need arguments?
         super().__init__()
         assert isinstance(self.hashes, frozenset)
@@ -101,7 +101,7 @@ class DepDefinition(_DepDefinitionTuple):
         if not self.version or not other_dep.version:
             return True
 
-        return self.version != other_dep.version
+        return self.version == other_dep.version
         # TODO: support version ranges, use some module for semantic versions
 
     def eq_hash(self, other_dep):
@@ -114,15 +114,25 @@ class DepDefinition(_DepDefinitionTuple):
 
         # if any of the hash sets is empty - no conflict
         if len(self_hashes) == 0 or len(other_hashes) == 0:
-            return False
+            return True
 
-        return len(self_hashes and other_hashes) == 0
+        return len(self_hashes and other_hashes) != 0
 
     def no_conflict(self, other_dep):
-        return not self.eq_fname(other_dep) and \
-               not self.eq_version(other_dep) and \
-               not self.eq_hash(other_dep)
+        '''
+        matches(self, other_dep)
 
+        Self is a superset of a definition for other_dep.
+        Name is the same. The version and the hashes are supersets.
+        '''
+
+        # TODO: what if I look for "any" definition in the rules?
+        #       the rule cannot be a superset for that, right?
+        #       think through how the matching should perform.
+
+        return self.eq_fname(other_dep) and \
+               self.eq_version(other_dep) and \
+               self.eq_hash(other_dep)
 
 def str_to_def(string):
     name, version, hashstrs = string.split(',')

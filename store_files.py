@@ -15,10 +15,28 @@ from os import mkdir, makedirs
 from os.path import basename, isdir, isfile, realpath
 from shutil import copy2 #copyfile
 import logging
+from collections import UserDict
 
 from dep_node import DepNode, DepDefinition, str_to_def
 from all_deps import readelf_dynamic, add_to_accumulated_nodes, check_in_accumulated_nodes
 
+
+class BinaryDefFile(UserDict):
+    def __getitem__(self, binary_def):
+        '''
+         __getitem__(self, binary_def)
+
+        Find a definition in the dictionary that satisfies binary_def.
+        I.e. the name is the same, the versions overlap, the hash tags overlap.
+        '''
+
+        assert isinstance(binary_def, DepDefinition)
+        # self.data.keys() = list of DepDefinition
+        for rule_def, rule in self.data.items():
+            if rule_def.no_conflict(binary_def):
+                return rule
+
+        raise KeyError(f'Could not find a suitable definition for: {binary_def}')
 
 def set_rpath(filename):
     name = basename(filename)
@@ -180,7 +198,7 @@ def parse_env_file(env_file) -> dict:
     name: DepDefinition
     '''
 
-    binary_defs = {}
+    binary_defs = BinaryDefFile()
 
     # the file should probably be some YAML or TOML
     # I don't want JSON, because I want shortcuts for the user
@@ -233,59 +251,6 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.INFO)
 
     dependency_defs = parse_env_file(args.env_file)
-
-    '''
-    At this point, there is a list of dependencies from a file,
-    and there is the store directory - you can readelf -d the binaries there
-    to get the _names_ of their dependencies, without the version and hashtag.
-
-    What should be there is some way to specify the version and hashtags
-    that must be used for the dependencies of some binaries.
-    If it is not specified, then grab any file of the latest version of
-    the binary.
-
-    So, the file specifies the binaries that you want to get in the environment,
-    and additional rules for dependencies.
-
-    The additional rules specify the dependency of some binary. I.e. the binary
-    itself says only the name of the dependency, which is the interface name.
-    But the rule should also specify that _for this binary_ this dependency name
-    must come with some version or just some hashtag.
-
-    Then, how it works when I extend the environment with some other versions?
-    The new directory will come first in the PATH, and it will have common/ point
-    to the old directory. The other versions compose a new set of rules.
-    These rules can be compared with the old rules, whether they agree. If not,
-    then the new directory is like a graph extension for version conflicts?
-    The idea was that the PATH directories are for different executables.
-    Different directories is like graph deviations for version conflicts in
-    executables. But some dependencies can be shared.
-
-    The easiest would be to just symlink _all_ dependencies in the new PATH
-    directories.
-
-    Then, there could be sharing too: you probably have to traverse
-    the directories down the common/ symlinks (which are supposed to be on PATH),
-    looking for your dependency. I.e. for these new binaries, you update the rules,
-    overwritting the old rules when needed. Then you check the common/ first,
-    if a rule is not fullfilled, check the store and bring the new version
-    to the new PATH directory.
-    '''
-
-    '''
-    The rules do not have to nest, don't they? I.e. each rules is concerned only
-    with the dependencies of the given file.
-
-    Executable foo depends on libbar.so, which depends on libbaz.so. The rules
-    specify one dependency level at a time:
-
-    foo,ver,hashes > libbar.so,,hash
-    libbar.so,,hash > libbaz.so,,hash
-    qwe,, > libbar.so,ver,
-
-    It will need to find files by the hashes in the names, and by the versions.
-    Just use wildcards without / for the versions?
-    '''
 
     #
     makedirs(args.env_dir, exist_ok=True)
